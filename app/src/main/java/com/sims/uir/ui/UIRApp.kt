@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.sims.uir.domain.AgentSnapshot
 import com.sims.uir.domain.AgentRepository
 import java.text.DateFormat
 import java.util.Date
@@ -41,6 +42,7 @@ fun UIRApp(
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showMemoryDialog by remember { mutableStateOf(false) }
+    var snapshotToRestore by remember { mutableStateOf<AgentSnapshot?>(null) }
 
     Column(
         modifier = Modifier
@@ -60,13 +62,6 @@ fun UIRApp(
         StatusCard("Memory Count", state.memoryCount.toString())
         StatusCard("Task Count", state.taskCount.toString())
 
-        state.latestSnapshot?.let { snapshot ->
-            StatusCard(
-                title = "Latest Snapshot",
-                value = "${snapshot.label}\n${DateFormat.getDateTimeInstance().format(Date(snapshot.createdAt))}",
-            )
-        }
-
         Text(
             text = "Diagnostics: ${state.diagnosticStatus}",
             style = MaterialTheme.typography.bodyMedium,
@@ -84,6 +79,19 @@ fun UIRApp(
         ) {
             Text("Create Snapshot")
         }
+        Text("Saved Snapshots", style = MaterialTheme.typography.titleLarge)
+        if (state.snapshots.isEmpty()) {
+            Text("No saved snapshots")
+        } else {
+            state.snapshots.forEach { snapshot ->
+                SavedSnapshotCard(
+                    label = snapshot.label,
+                    createdAt = snapshot.createdAt,
+                    isRestoring = state.isRestoringSnapshot,
+                    onRestore = { snapshotToRestore = snapshot },
+                )
+            }
+        }
         Button(
             onClick = viewModel::runDiagnostics,
             modifier = Modifier.fillMaxWidth(),
@@ -100,6 +108,33 @@ fun UIRApp(
             onSave = { title, content ->
                 viewModel.addMemory(title, content)
                 showMemoryDialog = false
+            },
+        )
+    }
+
+    snapshotToRestore?.let { snapshot ->
+        AlertDialog(
+            onDismissRequest = { snapshotToRestore = null },
+            title = { Text("Restore Snapshot") },
+            text = { Text("Restore this snapshot? Current memories and tasks will be replaced.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        snapshotToRestore = null
+                        viewModel.restoreSnapshot(snapshot.id)
+                    },
+                    enabled = !state.isRestoringSnapshot,
+                ) {
+                    Text("Restore")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { snapshotToRestore = null },
+                    enabled = !state.isRestoringSnapshot,
+                ) {
+                    Text("Cancel")
+                }
             },
         )
     }
@@ -160,6 +195,39 @@ private fun StatusCard(title: String, value: String) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(6.dp))
             Text(value, style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
+
+@Composable
+private fun SavedSnapshotCard(
+    label: String,
+    createdAt: Long,
+    isRestoring: Boolean,
+    onRestore: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(label, style = MaterialTheme.typography.titleMedium)
+            Text(
+                DateFormat.getDateTimeInstance().format(Date(createdAt)),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Button(
+                onClick = onRestore,
+                enabled = !isRestoring,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (isRestoring) "Restoring..." else "Restore")
+            }
         }
     }
 }

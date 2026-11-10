@@ -13,6 +13,7 @@ interface AgentRepository {
     suspend fun completeTask(taskId: Long)
     suspend fun appendEvent(eventType: String, message: String, payload: String = "")
     suspend fun createSnapshot(label: String): AgentSnapshot
+    suspend fun restoreSnapshot(snapshotId: Long): Boolean
     suspend fun restoreLatestSnapshot(): Boolean
     suspend fun listSnapshots(): List<AgentSnapshot>
 }

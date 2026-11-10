@@ -7,7 +7,9 @@ The target runtime device is a Samsung Galaxy A53.
 
 Milestone 1 focuses on local identity, memory, diagnostics, and recovery. The
 current app stores identity, memories, tasks, event logs, and snapshots locally
-with Room. Snapshots can restore the saved identity, memories, and tasks.
+with Room. Saved snapshots can be viewed and individually restored; restoring
+replaces the current identity, memories, and tasks with the snapshot contents
+while preserving the snapshot itself.
 
 ## Build
 

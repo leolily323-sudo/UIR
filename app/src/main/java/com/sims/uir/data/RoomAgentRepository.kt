@@ -14,6 +14,7 @@ import com.sims.uir.domain.AgentSnapshot
 import com.sims.uir.domain.AgentTask
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -23,6 +24,8 @@ class RoomAgentRepository(
     private val clock: () -> Long = System::currentTimeMillis,
     private val json: Json = Json,
 ) : AgentRepository {
+    private val restoreMutex = Mutex()
+
     override suspend fun ensureActiveIdentity(): AgentIdentity =
         database.withTransaction { getOrCreateActiveIdentity() }.toDomain()
 
@@ -119,23 +122,39 @@ class RoomAgentRepository(
             appendEvent("snapshot_created", "Snapshot created: $label")
         }.toDomain()
 
-    override suspend fun restoreLatestSnapshot(): Boolean {
-        val snapshot = database.snapshotDao().getLatest() ?: return false
-        val identity = json.decodeFromString<IdentityEntity>(snapshot.identityJson)
-        val memories = json.decodeFromString<List<MemoryEntity>>(snapshot.memoriesJson)
-        val tasks = json.decodeFromString<List<TaskEntity>>(snapshot.tasksJson)
+    override suspend fun restoreSnapshot(snapshotId: Long): Boolean {
+        check(restoreMutex.tryLock()) { "Another snapshot restoration is already in progress" }
+        try {
+            return database.withTransaction {
+                val snapshot = database.snapshotDao().getById(snapshotId)
+                    ?: return@withTransaction false
+                val identity = json.decodeFromString<IdentityEntity>(snapshot.identityJson)
+                val memories = json.decodeFromString<List<MemoryEntity>>(snapshot.memoriesJson)
+                val tasks = json.decodeFromString<List<TaskEntity>>(snapshot.tasksJson)
 
-        database.withTransaction {
-            database.identityDao().deleteAll()
-            database.memoryDao().deleteAll()
-            database.taskDao().deleteAll()
-            database.identityDao().insert(identity)
-            memories.forEach { database.memoryDao().insert(it) }
-            tasks.forEach { database.taskDao().insert(it) }
+                database.identityDao().deleteAll()
+                database.memoryDao().deleteAll()
+                database.taskDao().deleteAll()
+                database.identityDao().insert(identity)
+                memories.forEach { database.memoryDao().insert(it) }
+                tasks.forEach { database.taskDao().insert(it) }
+                database.eventDao().insert(
+                    EventEntity(
+                        eventType = "snapshot_restored",
+                        message = "Snapshot restored: ${snapshot.label}",
+                        payload = "",
+                        createdAt = clock(),
+                    ),
+                )
+                true
+            }
+        } finally {
+            restoreMutex.unlock()
         }
-        appendEvent("snapshot_restored", "Snapshot restored: ${snapshot.label}")
-        return true
     }
+
+    override suspend fun restoreLatestSnapshot(): Boolean =
+        database.snapshotDao().getLatest()?.let { restoreSnapshot(it.id) } ?: false
 
     override suspend fun listSnapshots(): List<AgentSnapshot> =
         database.snapshotDao().getAll().map { it.toDomain() }

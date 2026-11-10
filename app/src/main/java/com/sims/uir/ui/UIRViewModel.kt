@@ -16,7 +16,8 @@ data class UIRUiState(
     val memoryCount: Int = 0,
     val taskCount: Int = 0,
     val diagnosticStatus: String = "Not run",
-    val latestSnapshot: AgentSnapshot? = null,
+    val snapshots: List<AgentSnapshot> = emptyList(),
+    val isRestoringSnapshot: Boolean = false,
 )
 
 class UIRViewModel(
@@ -41,11 +42,12 @@ class UIRViewModel(
                         memoryCount = memories.size,
                         taskCount = tasks.size,
                         diagnosticStatus = _uiState.value.diagnosticStatus,
-                        latestSnapshot = snapshots.firstOrNull(),
+                        snapshots = snapshots,
                     )
                 }.collect { databaseState ->
                     _uiState.value = databaseState.copy(
                         diagnosticStatus = _uiState.value.diagnosticStatus,
+                        isRestoringSnapshot = _uiState.value.isRestoringSnapshot,
                     )
                 }
             } catch (exception: Exception) {
@@ -64,6 +66,27 @@ class UIRViewModel(
         performAction("Snapshot created") {
             val label = "Snapshot ${System.currentTimeMillis()}"
             repository.createSnapshot(label)
+        }
+    }
+
+    fun restoreSnapshot(snapshotId: Long) {
+        if (_uiState.value.isRestoringSnapshot) return
+        _uiState.value = _uiState.value.copy(
+            isRestoringSnapshot = true,
+            diagnosticStatus = "Restoring snapshot...",
+        )
+        viewModelScope.launch {
+            try {
+                if (repository.restoreSnapshot(snapshotId)) {
+                    updateStatus("Snapshot restored")
+                } else {
+                    updateStatus("Error restoring snapshot: Snapshot not found")
+                }
+            } catch (exception: Exception) {
+                updateStatus("Error restoring snapshot: ${exception.message ?: exception::class.simpleName}")
+            } finally {
+                _uiState.value = _uiState.value.copy(isRestoringSnapshot = false)
+            }
         }
     }
 

@@ -57,19 +57,38 @@ class RoomAgentRepositoryTest {
     }
 
     @Test
-    fun restoresSnapshotAndPriorMemoryCount() = runBlocking {
-        repository.ensureActiveIdentity()
+    fun restoresSnapshotMemoriesTasksAndKeepsSnapshot() = runBlocking {
+        val originalIdentity = repository.ensureActiveIdentity()
         repository.addMemory("Before snapshot", "Keep this memory")
+        repository.addTask("Before snapshot", "Keep this task")
         val snapshot = repository.createSnapshot("Before changes")
         repository.addMemory("After snapshot", "Remove when restored")
+        repository.addTask("After snapshot", "Remove this task")
 
         assertEquals(2, repository.observeMemories().first().size)
-        assertTrue(repository.restoreLatestSnapshot())
+        assertEquals(2, repository.observeTasks().first().size)
+        assertTrue(repository.restoreSnapshot(snapshot.id))
 
         val restored = repository.observeMemories().first()
         assertEquals(1, restored.size)
         assertEquals("Before snapshot", restored.single().title)
-        assertEquals(snapshot.label, repository.listSnapshots().single().label)
+        val restoredTasks = repository.observeTasks().first()
+        assertEquals(1, restoredTasks.size)
+        assertEquals("Before snapshot", restoredTasks.single().title)
+        assertEquals(1, database.memoryDao().count())
+        assertEquals(1, database.taskDao().count())
+
+        val activeIdentity = repository.observeActiveIdentity().first()
+        assertEquals(originalIdentity.id, activeIdentity?.id)
+        assertTrue(activeIdentity?.isActive == true)
+
+        val storedSnapshots = repository.listSnapshots()
+        assertEquals(1, storedSnapshots.size)
+        assertEquals(snapshot.id, storedSnapshots.single().id)
+        assertEquals(
+            1,
+            database.eventDao().observeAll().first().count { it.eventType == "snapshot_restored" },
+        )
     }
 
     @Test

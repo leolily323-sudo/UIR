@@ -86,6 +86,9 @@ interface SnapshotDao {
     @Query("SELECT * FROM snapshots ORDER BY createdAt DESC, id DESC LIMIT 1")
     suspend fun getLatest(): SnapshotEntity?
 
+    @Query("SELECT * FROM snapshots WHERE id = :snapshotId")
+    suspend fun getById(snapshotId: Long): SnapshotEntity?
+
     @Query("SELECT COUNT(*) FROM snapshots")
     suspend fun count(): Int
 
